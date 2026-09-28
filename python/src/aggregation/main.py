@@ -13,6 +13,12 @@ AGGREGATION_AMOUNT = int(os.environ["AGGREGATION_AMOUNT"])
 AGGREGATION_PREFIX = os.environ["AGGREGATION_PREFIX"]
 TOP_SIZE = int(os.environ["TOP_SIZE"])
 
+class Connection:
+    def __init__(self, id):
+        self.fruits ={}
+        self.id = id
+        self.sum_set = set()
+
 
 class AggregationFilter:
 
@@ -23,38 +29,47 @@ class AggregationFilter:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
-        self.fruit_top = []
+        self.clients = {}
 
-    def _process_data(self, fruit, amount):
-        logging.info("Processing data message")
-        for i in range(len(self.fruit_top)):
-            if self.fruit_top[i].fruit == fruit:
-                self.fruit_top[i] = self.fruit_top[i] + fruit_item.FruitItem(
-                    fruit, amount
-                )
-                return
-        bisect.insort(self.fruit_top, fruit_item.FruitItem(fruit, amount))
-
-    def _process_eof(self):
-        logging.info("Received EOF")
-        fruit_chunk = list(self.fruit_top[-TOP_SIZE:])
-        fruit_chunk.reverse()
-        fruit_top = list(
-            map(
-                lambda fruit_item: (fruit_item.fruit, fruit_item.amount),
-                fruit_chunk,
-            )
+    def _process_data(self, client_id, sum_id, sum_result):
+        logging.info(
+            f"Aggregation {ID}: received "
+            f"client={client_id}, sum={sum_id}"
         )
-        self.output_queue.send(message_protocol.internal.serialize(fruit_top))
-        del self.fruit_top
+        if client_id not in self.clients:
+            self.clients[client_id] = Connection(client_id)
+        conn = self.clients[client_id]
+        for (fruit, amount) in sum_result:
+            item = fruit_item.FruitItem(fruit,amount)
+            if fruit not in conn.fruits:
+                conn.fruits[fruit] = item
+            else:
+                conn.fruits[fruit] += item
+        conn.sum_set.add(sum_id)
+        logging.info(
+            f"Aggregation {ID}: client={client_id}, "
+            f"sum_set={conn.sum_set}"
+        )
+        if len(conn.sum_set) == SUM_AMOUNT:
+            top_item = sorted(conn.fruits.values(),reverse=True)[:TOP_SIZE]
+            top = []
+            for ti in top_item:
+                top.append([ti.fruit, ti.amount])
+            logging.info(
+                f"Aggregation {ID}: COMPLETE client={client_id}, "
+                f"top={top}"
+            )
+            self.output_queue.send(message_protocol.internal.serialize([client_id, top]))
+
 
     def process_messsage(self, message, ack, nack):
         logging.info("Process message")
         fields = message_protocol.internal.deserialize(message)
-        if len(fields) == 2:
+        if len(fields) == 3:
             self._process_data(*fields)
         else:
-            self._process_eof()
+            nack()
+            return
         ack()
 
     def start(self):
