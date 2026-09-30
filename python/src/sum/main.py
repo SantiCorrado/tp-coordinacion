@@ -14,8 +14,8 @@ SUM_CONTROL_EXCHANGE = "SUM_CONTROL_EXCHANGE"
 AGGREGATION_AMOUNT = int(os.environ["AGGREGATION_AMOUNT"])
 AGGREGATION_PREFIX = os.environ["AGGREGATION_PREFIX"]
 
-def aggregator_responsable(client_id):
-    hash = zlib.crc32(client_id.encode("utf-8"))
+def aggregator_responsable(message):
+    hash = zlib.crc32(message.encode("utf-8"))
     return hash % AGGREGATION_AMOUNT
 
 def condition_ready(conn)->bool:
@@ -99,8 +99,9 @@ class SumFilter:
             return 
         if result is not None:
             for r in result:
-                self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, r))
-            self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.EOF, client_id, "", ID))
+                self.data_output_exchanges[aggregator_responsable(str(client_id)+str(r.fruit))].send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, r))
+            for doe in self.data_output_exchanges:
+                doe.send(message_protocol.internal.serialize(message_protocol.internal.EOF, client_id, "", ID))
         ack()
 
     def handle_control_exchange(self):

@@ -28,7 +28,7 @@ def serialize(type, id1, id2, payload):
     if type == RECV_EOF or type == REPORT_MSG:
         msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
         return msg.encode("utf-8")
-    if type == DATA:
+    elif type == DATA:
         msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
         return msg.encode("utf-8")
     elif type == EOF:

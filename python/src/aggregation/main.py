@@ -17,6 +17,7 @@ class Connection:
         self.fruits ={}
         self.id = id
         self.sum_set = set()
+        self.result_sent = False
 
 class AggregationFilter:
 
@@ -55,13 +56,11 @@ class AggregationFilter:
             f"Aggregation EOF {ID}: client={client_id}, "
             f"sum_set={conn.sum_set}"
         )
-        if len(conn.sum_set) == SUM_AMOUNT:
-            top = sorted(conn.fruits.values(),reverse=True)[:TOP_SIZE]
-            logging.info(
-                f"Aggregation {ID}: COMPLETE client={client_id}, "
-                f"top={top}"
-            )
-            self.output_queue.send(message_protocol.internal.serialize(message_protocol.internal.TOP,client_id, "", top))
+        if len(conn.sum_set) == SUM_AMOUNT and not conn.result_sent:
+            conn.result_sent = True
+            for r in list(conn.fruits.values()):
+                self.output_queue.send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, r))
+            self.output_queue.send(message_protocol.internal.serialize(message_protocol.internal.EOF, client_id, "", ID))
 
 
     def process_messsage(self, message, ack, nack):
