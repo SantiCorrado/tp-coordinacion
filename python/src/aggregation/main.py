@@ -85,7 +85,7 @@ def main():
         lambda signum, frame: handle_sigterm(aggregation_filter.input_exchange),)
     aggregation_filter.start()
     aggregation_filter.input_exchange.close()
-    aggregation_filter.otput_exchange.close()
+    aggregation_filter.output_queue.close()
     logging.info("Aggregation stopped")
     return 0
 

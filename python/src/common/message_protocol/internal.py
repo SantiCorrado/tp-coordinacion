@@ -17,6 +17,8 @@ def fruit_list_string(list):
 
 def string_fruit_item(string):
     acum = []
+    if not string:
+        return []
     for f in string.split('/'):
         fruit, amount = f.split()
         acum.append(fruit_item.FruitItem(fruit, int(amount)))
@@ -42,7 +44,7 @@ def serialize(type, id1, id2, payload):
 def deserialize(message):
     fields = message.decode("utf-8").split(',')
     if fields[0] == RECV_EOF or fields[0] == REPORT_MSG:
-        return [fields[0] , fields[1], fields[2], int(fields[3])]
+        return [fields[0] , fields[1], int(fields[2]), int(fields[3])]
     if fields[0] == DATA:
         return [fields[1], fields[2], string_fruit_item(fields[3])]
     elif fields[0] == EOF:
