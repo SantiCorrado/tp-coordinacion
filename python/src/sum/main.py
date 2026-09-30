@@ -98,14 +98,16 @@ class SumFilter:
             nack()
             return 
         if result is not None:
-            self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, result))
+            for r in result:
+                self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, r))
+            self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.EOF, client_id, "", ID))
         ack()
 
     def handle_control_exchange(self):
         logging.info(f"Starting control exchange")
         self.sum_control_exchange.start_consuming(self.process_control_message)
 
-    def _process_data(self, id, msgid, list):
+    def _process_data(self, id, msgid, fruitItem):
         logging.info(f"Process data")
         logging.info(
             f"Sum {ID}: received client={id} msg_id={msgid}"
@@ -116,8 +118,7 @@ class SumFilter:
                 self.client[id] = Connection(id)
             conn = self.client[id]
             conn.msg_ids.add(msgid)
-            for fruitItem in list:
-                conn.add_fruit(fruitItem)
+            conn.add_fruit(fruitItem)
             conn = self.client[id]
             if conn.recv_eof is not None:
                 report = len(conn.msg_ids)

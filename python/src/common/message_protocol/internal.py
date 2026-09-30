@@ -29,7 +29,7 @@ def serialize(type, id1, id2, payload):
         msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
         return msg.encode("utf-8")
     if type == DATA:
-        msg = str(type) + "," + str(id1) + "," + str(id2) + "," + fruit_list_string(payload)
+        msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
         return msg.encode("utf-8")
     elif type == EOF:
         msg = str(type) + "," + str(id1) + "," + str(payload)
@@ -46,7 +46,8 @@ def deserialize(message):
     if fields[0] == RECV_EOF or fields[0] == REPORT_MSG:
         return [fields[0] , fields[1], int(fields[2]), int(fields[3])]
     if fields[0] == DATA:
-        return [fields[1], fields[2], string_fruit_item(fields[3])]
+        fruit, amount = fields[3].split()
+        return [fields[1], int(fields[2]), fruit_item.FruitItem(fruit,int(amount))]
     elif fields[0] == EOF:
         return [fields[1], int(fields[2])]
     elif fields[0] == TOP:

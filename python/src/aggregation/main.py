@@ -29,7 +29,7 @@ class AggregationFilter:
         )
         self.clients = {}
 
-    def _process_data(self, client_id, sum_id, sum_result):
+    def _process_data(self, client_id, sum_id, item):
         logging.info(
             f"Aggregation {ID}: received "
             f"client={client_id}, sum={sum_id}"
@@ -37,14 +37,22 @@ class AggregationFilter:
         if client_id not in self.clients:
             self.clients[client_id] = Connection(client_id)
         conn = self.clients[client_id]
-        for item in sum_result: 
-            if item.fruit not in conn.fruits:
-                conn.fruits[item.fruit] = item
-            else:
-                conn.fruits[item.fruit] += item
+        if item.fruit not in conn.fruits:
+            conn.fruits[item.fruit] = item
+        else:
+            conn.fruits[item.fruit] += item
+
+    def _process_eof(self,client_id, sum_id):
+        logging.info(
+            f"Aggregation {ID}: received "
+            f"client={client_id}, sum={sum_id}"
+        )
+        if client_id not in self.clients:
+            self.clients[client_id] = Connection(client_id)
+        conn = self.clients[client_id]
         conn.sum_set.add(sum_id)
         logging.info(
-            f"Aggregation {ID}: client={client_id}, "
+            f"Aggregation EOF {ID}: client={client_id}, "
             f"sum_set={conn.sum_set}"
         )
         if len(conn.sum_set) == SUM_AMOUNT:
@@ -61,6 +69,8 @@ class AggregationFilter:
         fields = message_protocol.internal.deserialize(message)
         if len(fields) == 3:
             self._process_data(*fields)
+        elif len(fields) == 2:
+            self._process_eof(*fields)
         else:
             nack()
             return
