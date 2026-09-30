@@ -1,6 +1,6 @@
 import os
 import logging
-
+import signal
 from common import middleware, message_protocol, fruit_item
 
 MOM_HOST = os.environ["MOM_HOST"]
@@ -25,19 +25,29 @@ class JoinFilter:
 
     def process_messsage(self, message, ack, nack):
         logging.info("Received top")
-        fruit_top = message_protocol.internal.deserialize(message)
-        self.output_queue.send(message_protocol.internal.serialize(fruit_top))
+        self.output_queue.send(message)
         ack()
 
     def start(self):
         self.input_queue.start_consuming(self.process_messsage)
 
+def handle_sigterm(input_queue):
+    try:
+        input_queue.stop_consuming()
+    except middleware.MessageMiddlewareDisconnectedError as e:
+        logging.error(f"Error stopping consumer: {e}")
+    except middleware.MessageMiddlewareMessageError as e:
+        logging.error(f"Error stopping consumer: {e}")
 
 def main():
     logging.basicConfig(level=logging.INFO)
     join_filter = JoinFilter()
+    signal.signal(
+            signal.SIGTERM,
+            lambda signum, frame: handle_sigterm(join_filter.input_queue),)
     join_filter.start()
-
+    join_filter.input_queue.close()
+    join_filter.output_queue.close()
     return 0
 
 

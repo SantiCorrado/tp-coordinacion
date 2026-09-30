@@ -42,8 +42,10 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
     def stop_consuming(self):
         try:
-            if self.consuming:
-                self.channel.stop_consuming()
+            if self.consuming and self.consuming and self.connection.is_open:
+                self.connection.add_callback_threadsafe(
+                    self.channel.stop_consuming
+                )
                 self.consuming = False
         except pika.exceptions.AMQPConnectionError as e:
             self.consuming = False
@@ -61,8 +63,11 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
     def close(self):
         try:
-            self.connection.close()
+            if self.connection is not None and self.connection.is_open:
+                self.connection.close()
             self.consuming = False
+        except pika.exceptions.AMQPConnectionError as e:
+            raise MessageMiddlewareCloseError(e)
         except Exception as e:
             raise MessageMiddlewareCloseError(e)
 
@@ -111,7 +116,9 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
     def stop_consuming(self):
         try:
             if self.consuming:
-                self.channel.stop_consuming()
+                self.connection.add_callback_threadsafe(
+                    self.channel.stop_consuming
+                )
                 self.consuming = False
         except pika.exceptions.AMQPConnectionError as e:
             self.consuming = False
@@ -130,8 +137,10 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 
     def close(self):
         try:
-            self.connection.close()
+            if self.connection is not None and self.connection.is_open:
+                self.connection.close()
             self.consuming = False
+        except pika.exceptions.AMQPConnectionError as e:
+            raise MessageMiddlewareCloseError(e)
         except Exception as e:
-            self.consuming = False
             raise MessageMiddlewareCloseError(e)

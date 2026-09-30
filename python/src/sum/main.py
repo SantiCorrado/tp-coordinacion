@@ -1,7 +1,8 @@
 import os
 import logging
 import threading
-
+import zlib
+import signal
 from common import middleware, message_protocol, fruit_item
 
 ID = int(os.environ["ID"])
@@ -13,14 +14,9 @@ SUM_CONTROL_EXCHANGE = "SUM_CONTROL_EXCHANGE"
 AGGREGATION_AMOUNT = int(os.environ["AGGREGATION_AMOUNT"])
 AGGREGATION_PREFIX = os.environ["AGGREGATION_PREFIX"]
 #Estos serian los 2 tipos de mensajes enviados por el exchange de control
-RECV_EOF = 1 #indica que uno de los sum obtuvo el eof de uno de los clientes
-REPORT_MSG  = 2 #indica que uno de los clientes recibio uno de los ultimos mensajes
 
-#BASADO EN https://dev.to/ali_algmass/hash-functions-determinism-a-deep-dive-a9g
 def aggregator_responsable(client_id):
-    hash = 7
-    for c in client_id:
-        hash = hash * 31 + ord(c)
+    hash = zlib.crc32(client_id.encode("utf-8"))
     return hash % AGGREGATION_AMOUNT
 
 def condition_ready(conn)->bool:
@@ -41,61 +37,44 @@ class Connection:
         self.recv_eof = None
         self.result_sent = False
 
-    def add_fruit(self, fruit, amount):
-        fi = fruit_item.FruitItem(fruit, int(amount))
-        if fruit not in self.fruits:
-            self.fruits[fruit] = fi
+    def add_fruit(self, fruititem):
+        if fruititem.fruit not in self.fruits:
+            self.fruits[fruititem.fruit] = fruititem
         else:
-            self.fruits[fruit] = self.fruits[fruit] + fi 
+            self.fruits[fruititem.fruit] = self.fruits[fruititem.fruit] + fruititem 
 
 class SumFilter:
-        
-    def process_control_message(self, message, ack, nack):
-        fields = message_protocol.internal.deserialize(message)
-        if len(fields) != 4:
-            logging.error(f"Invalid control message received: {fields}")
-            nack()
-            return
-        [msg_type, client_id, sum_id, msg] = fields
-        result = None
-        if msg_type == RECV_EOF:
-            report = 0
-            with self.client_acces:
-                if client_id not in self.client:
-                    self.client[client_id] = Connection(client_id)
-                conn = self.client[client_id]
-                conn.recv_eof =  msg
-                conn.state[ID] = len(conn.msg_ids)
-                report = len(conn.msg_ids)
-                if condition_ready(conn) and not conn.result_sent:
-                    result = []
-                    conn.result_sent = True
-                    for fr in conn.fruits.values():
-                        result.append([fr.fruit , fr.amount])
-            self.sum_control_exchange.send(message_protocol.internal.serialize([REPORT_MSG , client_id, ID, report]))             
-        elif msg_type == REPORT_MSG :
-            with self.client_acces:
-                if client_id not in self.client:
-                    self.client[client_id] = Connection(client_id)
-                conn = self.client[client_id]
-                conn.state[sum_id] = msg
-                if condition_ready(conn) and not conn.result_sent:
-                    result = []
-                    conn.result_sent = True
-                    for fr in conn.fruits.values():
-                        result.append([fr.fruit , fr.amount])
-        else:
-            logging.error(f"Invalid control message type received: {msg_type}")
-            nack()
-            return 
-        if result is not None:
-            message = [client_id, ID, result]
-            self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message))
-        ack()
 
-    def handle_control_exchange(self):
-        logging.info(f"Starting control exchange")
-        self.sum_control_exchange.start_consuming(self.process_control_message)
+    def shutdown(self):
+        logging.info("Shuting down SUM")
+        try:
+            self.input_queue.stop_consuming()
+        except Exception:
+            logging.exception("Error stopping queue")
+        try:
+            self.sum_control_exchange.stop_consuming()
+        except Exception:
+            logging.exception("Error stopping control consumer")
+        if self.control_thread.is_alive():
+            self.control_thread.join()
+        try:
+            self.input_queue.close()
+        except Exception:
+            logging.exception("Error stopping queue")
+        try:
+            self.sum_control_exchange.close()
+        except Exception:
+            logging.exception("Error stopping control consumer")
+        for e in self.data_output_exchanges:
+            try:
+                e.close()
+            except Exception:
+                logging.exception("Error closing data output")
+        try:
+            self.sum_control_output_exchange.close()
+        except Exception:
+            logging.exception("Error stopping control consumer")
+        logging.info("Sum shutdown succesful")
 
     def __init__(self):
         self.client = {} #En este diccioario aparecen los clientes que ya enviaron su EOF con id de msg
@@ -116,7 +95,49 @@ class SumFilter:
         self.control_thread = threading.Thread(target=self.handle_control_exchange)
         self.control_thread.start()
 
-    def _process_data(self, id, msgid, fruit, amount):
+    def process_control_message(self, message, ack, nack):
+        fields = message_protocol.internal.deserialize(message)
+        if len(fields) != 4:
+            logging.error(f"Invalid control message received: {fields}")
+            nack()
+            return
+        [msg_type, client_id, sum_id, msg] = fields
+        result = None
+        if msg_type == message_protocol.internal.RECV_EOF:
+            report = 0
+            with self.client_acces:
+                if client_id not in self.client:
+                    self.client[client_id] = Connection(client_id)
+                conn = self.client[client_id]
+                conn.recv_eof =  msg
+                conn.state[ID] = len(conn.msg_ids)
+                report = len(conn.msg_ids)
+                if condition_ready(conn) and not conn.result_sent:
+                    conn.result_sent = True
+                    result = list(conn.fruits.values())
+            self.sum_control_exchange.send(message_protocol.internal.serialize(message_protocol.internal.REPORT_MSG , client_id, ID, report))             
+        elif msg_type == message_protocol.internal.REPORT_MSG :
+            with self.client_acces:
+                if client_id not in self.client:
+                    self.client[client_id] = Connection(client_id)
+                conn = self.client[client_id]
+                conn.state[sum_id] = msg
+                if condition_ready(conn) and not conn.result_sent:
+                    conn.result_sent = True
+                    result = list(conn.fruits.values())
+        else:
+            logging.error(f"Invalid control message type received: {msg_type}")
+            nack()
+            return 
+        if result is not None:
+            self.data_output_exchanges[aggregator_responsable(client_id)].send(message_protocol.internal.serialize(message_protocol.internal.DATA, client_id, ID, result))
+        ack()
+
+    def handle_control_exchange(self):
+        logging.info(f"Starting control exchange")
+        self.sum_control_exchange.start_consuming(self.process_control_message)
+
+    def _process_data(self, id, msgid, list):
         logging.info(f"Process data")
         logging.info(
             f"Sum {ID}: received client={id} msg_id={msgid}"
@@ -127,7 +148,8 @@ class SumFilter:
                 self.client[id] = Connection(id)
             conn = self.client[id]
             conn.msg_ids.add(msgid)
-            conn.add_fruit(fruit,amount)
+            for fruitItem in list:
+                conn.add_fruit(fruitItem)
             conn = self.client[id]
             if conn.recv_eof is not None:
                 report = len(conn.msg_ids)
@@ -136,7 +158,7 @@ class SumFilter:
                 f"SUM {ID}: received final msg "
                 f"client={id}, msgid={report}"
             )
-            self.sum_control_output_exchange.send(message_protocol.internal.serialize([REPORT_MSG , id, ID, report]))
+            self.sum_control_output_exchange.send(message_protocol.internal.serialize(message_protocol.internal.REPORT_MSG , id, ID, report))
         
     def _process_eof(self, client_id, msgid):
         logging.info(f"Broadcasting data messages")
@@ -146,12 +168,12 @@ class SumFilter:
         with self.client_acces:
             if client_id not in self.client:
                 self.client[client_id] = Connection(client_id)
-        self.sum_control_output_exchange.send(message_protocol.internal.serialize([RECV_EOF , client_id, ID, msgid]))
+        self.sum_control_output_exchange.send(message_protocol.internal.serialize(message_protocol.internal.RECV_EOF , client_id, ID, msgid))
         logging.info(f"Broadcasting EOF message")
 
     def process_data_messsage(self, message, ack, nack):
         fields = message_protocol.internal.deserialize(message)
-        if len(fields) == 4:
+        if len(fields) == 3:
             self._process_data(*fields)
         elif len(fields) == 2:
             self._process_eof(*fields)
@@ -166,6 +188,9 @@ class SumFilter:
 def main():
     logging.basicConfig(level=logging.INFO)
     sum_filter = SumFilter()
+    def handle_sigterm(signum, frame):
+        sum_filter.shutdown()
+    signal.signal(signal.SIGTERM, handle_sigterm)
     sum_filter.start()
     return 0
 
