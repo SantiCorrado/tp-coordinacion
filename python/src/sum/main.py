@@ -47,13 +47,6 @@ class SumFilter:
     def __init__(self):
         self.client = {}
         self.client_acces = threading.Lock()
-        self.input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
-        self.data_output_exchanges = []
-        for i in range(AGGREGATION_AMOUNT):
-            data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
-                MOM_HOST, AGGREGATION_PREFIX, [f"{AGGREGATION_PREFIX}_{i}"]
-            )
-            self.data_output_exchanges.append(data_output_exchange)
         self.sum_control_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
             MOM_HOST, SUM_CONTROL_EXCHANGE, [SUM_CONTROL_EXCHANGE]
         )
@@ -62,6 +55,13 @@ class SumFilter:
         )
         self.control_thread = threading.Thread(target=self.handle_control_exchange)
         self.control_thread.start()
+        self.input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
+        self.data_output_exchanges = []
+        for i in range(AGGREGATION_AMOUNT):
+            data_output_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
+                MOM_HOST, AGGREGATION_PREFIX, [f"{AGGREGATION_PREFIX}_{i}"]
+            )
+            self.data_output_exchanges.append(data_output_exchange)
 
     def process_control_message(self, message, ack, nack):
         fields = message_protocol.internal.deserialize(message)
