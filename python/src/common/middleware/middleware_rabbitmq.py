@@ -42,11 +42,10 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
     def stop_consuming(self):
         try:
-            if self.consuming and self.consuming and self.connection.is_open:
+            if self.consuming and self.connection.is_open:
                 self.connection.add_callback_threadsafe(
                     self.channel.stop_consuming
                 )
-                self.consuming = False
         except pika.exceptions.AMQPConnectionError as e:
             self.consuming = False
             raise MessageMiddlewareDisconnectedError(e)
@@ -119,7 +118,6 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
                 self.connection.add_callback_threadsafe(
                     self.channel.stop_consuming
                 )
-                self.consuming = False
         except pika.exceptions.AMQPConnectionError as e:
             self.consuming = False
             raise MessageMiddlewareDisconnectedError(e)

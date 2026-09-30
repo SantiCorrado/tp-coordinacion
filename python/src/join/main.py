@@ -46,8 +46,15 @@ def main():
             signal.SIGTERM,
             lambda signum, frame: handle_sigterm(join_filter.input_queue),)
     join_filter.start()
-    join_filter.input_queue.close()
-    join_filter.output_queue.close()
+    try:
+        join_filter.input_queue.close()
+    except middleware.MessageMiddlewareCloseError as e:
+        logging.error(f"Error closing input exchange: {e}")
+    try:
+        join_filter.output_queue.close()
+    except middleware.MessageMiddlewareCloseError as e:
+        logging.error(f"Error closing input exchange: {e}")
+    logging.info("join stopped")
     return 0
 
 

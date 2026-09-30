@@ -13,7 +13,6 @@ SUM_PREFIX = os.environ["SUM_PREFIX"]
 SUM_CONTROL_EXCHANGE = "SUM_CONTROL_EXCHANGE"
 AGGREGATION_AMOUNT = int(os.environ["AGGREGATION_AMOUNT"])
 AGGREGATION_PREFIX = os.environ["AGGREGATION_PREFIX"]
-#Estos serian los 2 tipos de mensajes enviados por el exchange de control
 
 def aggregator_responsable(client_id):
     hash = zlib.crc32(client_id.encode("utf-8"))
@@ -44,40 +43,9 @@ class Connection:
             self.fruits[fruititem.fruit] = self.fruits[fruititem.fruit] + fruititem 
 
 class SumFilter:
-
-    def shutdown(self):
-        logging.info("Shuting down SUM")
-        try:
-            self.input_queue.stop_consuming()
-        except Exception:
-            logging.exception("Error stopping queue")
-        try:
-            self.sum_control_exchange.stop_consuming()
-        except Exception:
-            logging.exception("Error stopping control consumer")
-        if self.control_thread.is_alive():
-            self.control_thread.join()
-        try:
-            self.input_queue.close()
-        except Exception:
-            logging.exception("Error stopping queue")
-        try:
-            self.sum_control_exchange.close()
-        except Exception:
-            logging.exception("Error stopping control consumer")
-        for e in self.data_output_exchanges:
-            try:
-                e.close()
-            except Exception:
-                logging.exception("Error closing data output")
-        try:
-            self.sum_control_output_exchange.close()
-        except Exception:
-            logging.exception("Error stopping control consumer")
-        logging.info("Sum shutdown succesful")
-
+        
     def __init__(self):
-        self.client = {} #En este diccioario aparecen los clientes que ya enviaron su EOF con id de msg
+        self.client = {}
         self.client_acces = threading.Lock()
         self.input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
         self.data_output_exchanges = []
@@ -185,13 +153,48 @@ class SumFilter:
     def start(self):
         self.input_queue.start_consuming(self.process_data_messsage)
 
+    def shutdown(self):
+        if self.control_thread.is_alive():
+            self.control_thread.join()
+        try:
+            self.input_queue.close()
+        except middleware.MessageMiddlewareCloseError as e:
+            logging.error(f"Error closing input queue: {e}")
+        try:
+            self.sum_control_exchange.close()
+        except  middleware.MessageMiddlewareCloseError as e:
+            logging.error(f"Error closing control consumer {e}")
+        for exchange in self.data_output_exchanges:
+            try:
+                exchange.close()
+            except middleware.MessageMiddlewareCloseError as e:
+                logging.error("Error closing data output")
+        try:
+            self.sum_control_output_exchange.close()
+        except middleware.MessageMiddlewareCloseError as e:
+            logging.error("Error stopping control consumer")
+        logging.info("Sum shutdown succesful")
+
 def main():
     logging.basicConfig(level=logging.INFO)
     sum_filter = SumFilter()
     def handle_sigterm(signum, frame):
-        sum_filter.shutdown()
+        try:
+            sum_filter.input_queue.stop_consuming()
+        except middleware.MessageMiddlewareDisconnectedError as e:
+            logging.error(f"Error stopping input queue: {e}")
+        except middleware.MessageMiddlewareMessageError  as e:
+            logging.error(f"Error stopping input queue: {e}")
+        try:
+            sum_filter.sum_control_exchange.stop_consuming()
+        except middleware.MessageMiddlewareDisconnectedError as e:
+            logging.error(f"Error stopping input queue: {e}")
+        except middleware.MessageMiddlewareMessageError  as e:
+            logging.error(f"Error stopping input queue: {e}")
+
     signal.signal(signal.SIGTERM, handle_sigterm)
     sum_filter.start()
+    sum_filter.shutdown()
     return 0
 
 

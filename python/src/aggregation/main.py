@@ -83,9 +83,16 @@ def main():
     signal.signal(
         signal.SIGTERM,
         lambda signum, frame: handle_sigterm(aggregation_filter.input_exchange),)
+    
     aggregation_filter.start()
-    aggregation_filter.input_exchange.close()
-    aggregation_filter.output_queue.close()
+    try:
+        aggregation_filter.input_exchange.close()
+    except middleware.MessageMiddlewareCloseError as e:
+        logging.error(f"Error closing input exchange: {e}")
+    try:
+        aggregation_filter.output_queue.close()
+    except middleware.MessageMiddlewareCloseError as e:
+        logging.error(f"Error closing input exchange: {e}")
     logging.info("Aggregation stopped")
     return 0
 
