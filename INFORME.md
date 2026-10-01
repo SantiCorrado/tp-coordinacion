@@ -20,7 +20,7 @@ El envío de los datos desde las instancias de sum a los aggregator se hace util
 ## JOIN:
 La instancia de join va a recibir la suma total de cada fruta para cada cliente y al recibir el mensaje EOF de cada aggregatorse arma el top total del cliente y envía un mensaje TOP al gateway.
 
-# Escabilidad
+# Escalabilidad
 
  El sistema escala respecto clientes y volumen de datos al distribuir el procesamiento de los datos de cada cliente entre los diferentes controladores sin repetir cálculos, las instancias de sum realizan la suma parcial de los registro de compra que reciben, los aggregators obtienen la cantidad total de un conjunto de frutas comprada por un cliente particular (client_id), y el join finalmente une esos valores totales para encontrar al top final.
 
