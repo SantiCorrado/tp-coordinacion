@@ -179,7 +179,7 @@ class SumFilter:
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    sum_filter = SumFilter()
+    
     def handle_sigterm(signum, frame):
         try:
             sum_filter.input_queue.stop_consuming()
@@ -195,6 +195,7 @@ def main():
             logging.error(f"Error stopping input queue: {e}")
 
     signal.signal(signal.SIGTERM, handle_sigterm)
+    sum_filter = SumFilter()
     sum_filter.start()
     sum_filter.shutdown()
     return 0
