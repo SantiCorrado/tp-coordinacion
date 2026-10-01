@@ -25,10 +25,7 @@ def string_fruit_item(string):
     return acum
 
 def serialize(type, id1, id2, payload):
-    if type == RECV_EOF or type == REPORT_MSG:
-        msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
-        return msg.encode("utf-8")
-    elif type == DATA:
+    if type == RECV_EOF or type == REPORT_MSG or type == DATA:
         msg = str(type) + "," + str(id1) + "," + str(id2) + "," + str(payload)
         return msg.encode("utf-8")
     elif type == EOF:
